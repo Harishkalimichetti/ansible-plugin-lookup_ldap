@@ -133,7 +133,7 @@ class LookupModule(LookupBase):
             raise ValueError("LDAP URL not provided in the context")
 
         tempar = Templar(loader=self._loader, variables=variables)
-        ctx = templar.template(Ctx)
+        ctx = templar.template(ctx)
         
         # Prepare per-term inject, making named context available, if any
 
