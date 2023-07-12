@@ -22,6 +22,7 @@ from ansible import errors
 from ansible.parsing.splitter import parse_kv
 from ansible.plugins.lookup import LookupBase
 from ansible.template import Templar
+from jinja2 import Template
 
 import base64
 import ldap
@@ -106,13 +107,19 @@ class LookupModule(LookupBase):
     __ldap_library_lock = threading.Lock()
 
     def render_template(self, inject, v):
-        return Templar(loader=self._loader, variables=inject).template(v)
-
+        templar = Templar(loader=self._loader, variables=inject)
+        rendered = templar.template(v)
+        return rendered
+        
     def run(self, terms, variables=None, **kwargs):
         if not isinstance(terms, list):
             terms = [terms]
 
-        ctx = {}
+        ctx = {
+            'url': 'ldap://{{ vault_ldap_serverurl }}',
+            'binddn': '{{ vault_ldap_binddn }}',
+            'bindpw': '{{ vault_ldap_bindpw }}'
+        }
         while len(terms) > 0 and isinstance(terms[0], dict):
             # Allow specifying a list of terms as a 'terms' parameter
 
@@ -121,8 +128,13 @@ class LookupModule(LookupBase):
                 terms.extend(item.pop('terms'))
 
             ctx.update(item)
-        ctx = fill_context(ctx, variables, **kwargs)
 
+        if 'url' not in ctx:
+            raise ValueError("LDAP URL not provided in the context")
+
+        tempar = Templar(loader=self._loader, variables=variables)
+        ctx = templar.template(Ctx)
+        
         # Prepare per-term inject, making named context available, if any
 
         search_inject = variables.copy()
@@ -141,10 +153,9 @@ class LookupModule(LookupBase):
         # do template substitution for connection parameters.
 
         try:
-            ctx = self.render_template(variables, ctx)
+            ctx = self.render_template(search_inject, ctx)
         except Exception, e:
-            raise errors.AnsibleError(
-                'exception while preparing LDAP parameters: %s' % e)
+            raise errors.AnsibleError('exception while preparing LDAP parameters: %s' % e)
         self._display.vv("LDAP config: %s" % hide_pw(ctx))
 
         # Compute attribute list and attribute properties
